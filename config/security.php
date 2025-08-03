@@ -171,4 +171,20 @@ function check_rate_limit($ip_address, $action = 'login', $max_attempts = 5, $ti
     
     return $row['attempts'] < $max_attempts;
 }
+
+function create_secure_admin_session($admin_id, $username) {
+    session_regenerate_id(true);
+    $_SESSION['admin_id'] = $admin_id;
+    $_SESSION['admin_username'] = $username;
+    $_SESSION['login_time'] = time();
+    $_SESSION['user_type'] = 'admin';
+    // Optionally, update last login time if you want:
+    global $conn;
+    if ($conn) {
+        $stmt = $conn->prepare("UPDATE admin_users SET last_login = NOW() WHERE id = ?");
+        $stmt->bind_param("i", $admin_id);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
 ?> 

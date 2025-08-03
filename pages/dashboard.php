@@ -57,7 +57,7 @@ $csrf_token = generate_csrf_token();
     <title>SecureAuth - Dashboard</title>
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             min-height: 100vh;
         }
         .navbar {
@@ -73,12 +73,12 @@ $csrf_token = generate_csrf_token();
             backdrop-filter: blur(10px);
         }
         .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             color: white;
             border-radius: 15px 15px 0 0 !important;
         }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             border: none;
             border-radius: 25px;
             padding: 8px 20px;
@@ -103,9 +103,9 @@ $csrf_token = generate_csrf_token();
         .badge-danger { background-color: #dc3545; color: white; }
         .activity-item {
             padding: 10px;
-            border-left: 3px solid #667eea;
+            border-left: 3px solid #009688;
             margin-bottom: 10px;
-            background: rgba(102, 126, 234, 0.1);
+            background: rgba(0, 150, 136, 0.1);
             border-radius: 5px;
         }
         .session-item {

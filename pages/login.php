@@ -1,12 +1,18 @@
 <?php
 require_once '../config/init.php';
 
+// --- Set Content Security Policy header (add this in your init.php or at the top here) ---
+header("Content-Security-Policy: script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://www.google.com https://www.gstatic.com;");
+
+// --- Your reCAPTCHA keys ---
+$recaptcha_site_key = "6LeCbJkrAAAAAHoJBlULHFl5uuS_pAkBYLL0yze4";
+$recaptcha_secret_key = "6LeCbJkrAAAAAPZ0k1Ywb-ZVNgAdShbrHCmuQXLB";
+
 $message = "";
 $toastClass = "";
 
 // Check if admin is already logged in
 if (isset($_SESSION['admin_id']) && isset($_SESSION['login_time'])) {
-    // Check session timeout
     if (time() - $_SESSION['login_time'] > SESSION_TIMEOUT) {
         session_destroy();
     } else {
@@ -22,92 +28,102 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $toastClass = "danger";
         log_security_event("CSRF_ATTEMPT", "Failed CSRF validation");
     } else {
-        $email = sanitize_input($_POST['email']);
-        $password = $_POST['password'];
-        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-        // Validate input
-        if (empty($email) || empty($password)) {
-            $message = "Please fill in all fields";
-            $toastClass = "warning";
-        } elseif (!validate_email($email)) {
-            $message = "Please enter a valid email address";
+        // Verify reCAPTCHA
+        $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
+        if (empty($recaptcha_response)) {
+            $message = "Please complete the reCAPTCHA verification.";
             $toastClass = "warning";
         } else {
-            // Check rate limiting
-            if (!check_rate_limit($ip_address, 'login', 5, 300)) {
-                $message = "Too many login attempts. Please try again in 5 minutes.";
-                $toastClass = "danger";
-                log_security_event("RATE_LIMIT_EXCEEDED", "IP: $ip_address");
-            } else {
-                // Get user data
-                $stmt = $conn->prepare("SELECT id, username, email, password_hash, login_attempts, account_locked, account_locked_until FROM users WHERE email = ?");
-                $stmt->bind_param("s", $email);
-                $stmt->execute();
-                $result = $stmt->get_result();
+            // Verify with Google
+            $verify = file_get_contents(
+                "https://www.google.com/recaptcha/api/siteverify?secret=" . $recaptcha_secret_key . "&response=" . $recaptcha_response . "&remoteip=" . $_SERVER['REMOTE_ADDR']
+            );
+            $captcha_success = json_decode($verify);
 
-                if ($result->num_rows > 0) {
-                    $user = $result->fetch_assoc();
-                    
-                    // Check if account is locked
-                    if ($user['account_locked'] && $user['account_locked_until'] > date('Y-m-d H:i:s')) {
-                        $message = "Account is temporarily locked due to too many failed attempts. Please try again later.";
-                        $toastClass = "danger";
-                        log_security_event($email, "Account locked");
-                    } else {
-                        // Verify password
-                        if (verify_password($password, $user['password_hash'])) {
-                            // Successful login
-                            reset_login_attempts($email);
-                            create_secure_session($user['id'], $user['username']);
-                            
-                            // Log successful login
-                            log_security_event($email, "SUCCESS");
-                            
-                            header('Location: dashboard.php');
-                            exit();
-                        } else {
-                            // Failed login
-                            increment_login_attempts($email);
-                            
-                            // Check if account should be locked
-                            $stmt = $conn->prepare("SELECT login_attempts FROM users WHERE email = ?");
-                            $stmt->bind_param("s", $email);
-                            $stmt->execute();
-                            $attempt_result = $stmt->get_result();
-                            $attempt_data = $attempt_result->fetch_assoc();
-                            $stmt->close();
-                            
-                            if ($attempt_data['login_attempts'] >= MAX_LOGIN_ATTEMPTS) {
-                                lock_account($email);
-                                $message = "Account locked due to too many failed attempts. Please try again in 15 minutes.";
-                                $toastClass = "danger";
-                            } else {
-                                $remaining_attempts = MAX_LOGIN_ATTEMPTS - $attempt_data['login_attempts'];
-                                $message = "Invalid email or password. {$remaining_attempts} attempts remaining.";
-                                $toastClass = "danger";
-                            }
-                            
-                            log_security_event($email, "FAILED");
-                        }
-                    }
+            if (!$captcha_success->success) {
+                $message = "reCAPTCHA verification failed. Please try again.";
+                $toastClass = "danger";
+                log_security_event("RECAPTCHA_FAILED", "IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+            } else {
+                // reCAPTCHA passed, proceed with login
+                $email = sanitize_input($_POST['email']);
+                $password = $_POST['password'];
+                $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+                // Validate input
+                if (empty($email) || empty($password)) {
+                    $message = "Please fill in all fields";
+                    $toastClass = "warning";
+                } elseif (!validate_email($email)) {
+                    $message = "Please enter a valid email address";
+                    $toastClass = "warning";
                 } else {
-                    // User not found - don't reveal this information
-                    $message = "Invalid email or password";
-                    $toastClass = "danger";
-                    log_security_event($email, "USER_NOT_FOUND");
+                    // Check rate limiting
+                    if (!check_rate_limit($ip_address, 'login', 5, 300)) {
+                        $message = "Too many login attempts. Please try again in 5 minutes.";
+                        $toastClass = "danger";
+                        log_security_event("RATE_LIMIT_EXCEEDED", "IP: $ip_address");
+                    } else {
+                        // Get user data
+                        $stmt = $conn->prepare("SELECT id, username, email, password_hash, login_attempts, account_locked, account_locked_until FROM users WHERE email = ?");
+                        $stmt->bind_param("s", $email);
+                        $stmt->execute();
+                        $result = $stmt->get_result();
+
+                        if ($result->num_rows > 0) {
+                            $user = $result->fetch_assoc();
+                            // Check if account is locked
+                            if ($user['account_locked'] && $user['account_locked_until'] > date('Y-m-d H:i:s')) {
+                                $message = "Account is temporarily locked due to too many failed attempts. Please try again later.";
+                                $toastClass = "danger";
+                                log_security_event($email, "Account locked");
+                            } else {
+                                // Verify password
+                                if (verify_password($password, $user['password_hash'])) {
+                                    // Successful login
+                                    reset_login_attempts($email);
+                                    create_secure_session($user['id'], $user['username']);
+                                    log_security_event($email, "SUCCESS");
+                                    header('Location: dashboard.php');
+                                    exit();
+                                } else {
+                                    // Failed login
+                                    increment_login_attempts($email);
+                                    // Check if account should be locked
+                                    $stmt = $conn->prepare("SELECT login_attempts FROM users WHERE email = ?");
+                                    $stmt->bind_param("s", $email);
+                                    $stmt->execute();
+                                    $attempt_result = $stmt->get_result();
+                                    $attempt_data = $attempt_result->fetch_assoc();
+                                    $stmt->close();
+                                    if ($attempt_data['login_attempts'] >= MAX_LOGIN_ATTEMPTS) {
+                                        lock_account($email);
+                                        $message = "Account locked due to too many failed attempts. Please try again in 15 minutes.";
+                                        $toastClass = "danger";
+                                    } else {
+                                        $remaining_attempts = MAX_LOGIN_ATTEMPTS - $attempt_data['login_attempts'];
+                                        $message = "Invalid email or password. {$remaining_attempts} attempts remaining.";
+                                        $toastClass = "danger";
+                                    }
+                                    log_security_event($email, "FAILED");
+                                }
+                            }
+                        } else {
+                            // User not found - don't reveal this information
+                            $message = "Invalid email or password";
+                            $toastClass = "danger";
+                            log_security_event($email, "USER_NOT_FOUND");
+                        }
+                        $stmt->close();
+                    }
                 }
-                $stmt->close();
             }
         }
     }
-    $conn->close();
 }
 
-// Generate CSRF token
 $csrf_token = generate_csrf_token();
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -122,7 +138,7 @@ $csrf_token = generate_csrf_token();
     <title>SecureAuth - Login</title>
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             min-height: 100vh;
         }
         .card {
@@ -131,12 +147,12 @@ $csrf_token = generate_csrf_token();
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
         }
         .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             color: white;
             border-radius: 15px 15px 0 0 !important;
         }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             border: none;
             border-radius: 25px;
             padding: 12px 30px;
@@ -148,8 +164,8 @@ $csrf_token = generate_csrf_token();
             padding: 12px 15px;
         }
         .form-control:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+            border-color: #009688;
+            box-shadow: 0 0 0 0.2rem rgba(0, 150, 136, 0.25);
         }
         .security-info {
             background: rgba(255, 255, 255, 0.1);
@@ -159,7 +175,6 @@ $csrf_token = generate_csrf_token();
         }
     </style>
 </head>
-
 <body>
     <div class="container mt-5">
         <div class="row justify-content-center">
@@ -172,7 +187,6 @@ $csrf_token = generate_csrf_token();
                     <div class="card-body p-4">
                         <form method="POST" id="loginForm">
                             <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                            
                             <div class="mb-3">
                                 <label for="email" class="form-label">
                                     <i class="fa fa-envelope"></i> Email Address
@@ -180,7 +194,6 @@ $csrf_token = generate_csrf_token();
                                 <input type="email" name="email" id="email" class="form-control" 
                                        required autocomplete="email" placeholder="Enter your email">
                             </div>
-                            
                             <div class="mb-3">
                                 <label for="password" class="form-label">
                                     <i class="fa fa-lock"></i> Password
@@ -193,21 +206,22 @@ $csrf_token = generate_csrf_token();
                                     </button>
                                 </div>
                             </div>
-                            
                             <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="rememberMe">
                                 <label class="form-check-label" for="rememberMe">
                                     Remember me for 30 days
                                 </label>
                             </div>
-                            
+                            <!-- Google reCAPTCHA widget -->
+                            <div class="mb-3">
+                                <div class="g-recaptcha" data-sitekey="<?php echo $recaptcha_site_key; ?>"></div>
+                            </div>
                             <div class="d-grid">
                                 <button type="submit" class="btn btn-primary btn-lg">
                                     <i class="fa fa-sign-in"></i> Secure Login
                                 </button>
                             </div>
                         </form>
-                        
                         <div class="text-center mt-4">
                             <p class="mb-2">Don't have an account? 
                                 <a href="register.php" class="text-decoration-none fw-bold">Register here</a>
@@ -216,23 +230,11 @@ $csrf_token = generate_csrf_token();
                                 <a href="resetpassword.php" class="text-decoration-none">Forgot Password?</a>
                             </p>
                         </div>
-                        
-                        <div class="security-info">
-                            <h6><i class="fa fa-shield"></i> Security Features:</h6>
-                            <ul class="list-unstyled mb-0 small">
-                                <li><i class="fa fa-check text-success"></i> CSRF Protection</li>
-                                <li><i class="fa fa-check text-success"></i> Rate Limiting</li>
-                                <li><i class="fa fa-check text-success"></i> Account Lockout</li>
-                                <li><i class="fa fa-check text-success"></i> Secure Sessions</li>
-                                <li><i class="fa fa-check text-success"></i> Password Hashing</li>
-                            </ul>
-                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-
     <!-- Toast Notification -->
     <?php if ($message): ?>
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -247,13 +249,12 @@ $csrf_token = generate_csrf_token();
         </div>
     </div>
     <?php endif; ?>
-
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <script>
         // Password visibility toggle
         document.getElementById('togglePassword').addEventListener('click', function() {
             const password = document.getElementById('password');
             const icon = this.querySelector('i');
-            
             if (password.type === 'password') {
                 password.type = 'text';
                 icon.classList.remove('fa-eye');
@@ -264,19 +265,16 @@ $csrf_token = generate_csrf_token();
                 icon.classList.add('fa-eye');
             }
         });
-
         // Form validation
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            
             if (!email || !password) {
                 e.preventDefault();
                 alert('Please fill in all fields');
                 return false;
             }
         });
-
         // Auto-hide toast after 5 seconds
         setTimeout(function() {
             const toasts = document.querySelectorAll('.toast');

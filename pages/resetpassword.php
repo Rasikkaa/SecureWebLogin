@@ -134,7 +134,7 @@ $csrf_token = generate_csrf_token();
     <title>SecureAuth - Password Reset</title>
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             min-height: 100vh;
         }
         .card {
@@ -143,12 +143,12 @@ $csrf_token = generate_csrf_token();
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
         }
         .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             color: white;
             border-radius: 15px 15px 0 0 !important;
         }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             border: none;
             border-radius: 25px;
             padding: 12px 30px;
@@ -160,8 +160,8 @@ $csrf_token = generate_csrf_token();
             padding: 12px 15px;
         }
         .form-control:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+            border-color: #009688;
+            box-shadow: 0 0 0 0.2rem rgba(0, 150, 136, 0.25);
         }
         .password-strength {
             height: 5px;

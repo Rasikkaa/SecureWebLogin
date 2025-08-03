@@ -1,6 +1,9 @@
 <?php
 require_once '../config/init.php';
 
+// Add this line to allow Google reCAPTCHA scripts
+header("Content-Security-Policy: script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://www.google.com https://www.gstatic.com;");
+
 $message = "";
 $toastClass = "";
 
@@ -10,6 +13,9 @@ if (isset($_SESSION['admin_id']) && isset($_SESSION['login_time'])) {
     exit();
 }
 
+$recaptcha_site_key = "6LeCbJkrAAAAAHoJBlULHFl5uuS_pAkBYLL0yze4";
+$recaptcha_secret_key = "6LeCbJkrAAAAAPZ0k1Ywb-ZVNgAdShbrHCmuQXLB";
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Verify CSRF token
     if (!isset($_POST['csrf_token']) || !verify_csrf_token($_POST['csrf_token'])) {
@@ -17,70 +23,87 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $toastClass = "danger";
         log_security_event("ADMIN_CSRF_ATTEMPT", "Failed CSRF validation");
     } else {
-        $username = sanitize_input($_POST['username']);
-        $password = $_POST['password'];
-        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-        // Validate input
-        if (empty($username) || empty($password)) {
-            $message = "Please fill in all fields";
+        // Verify reCAPTCHA
+        $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
+        if (empty($recaptcha_response)) {
+            $message = "Please complete the reCAPTCHA verification.";
             $toastClass = "warning";
         } else {
-            // Check rate limiting for admin login
-            if (!check_rate_limit($ip_address, 'admin_login', 20, 900)) {
-                $message = "Too many login attempts. Please try again in 15 minutes.";
+            $verify = file_get_contents(
+                "https://www.google.com/recaptcha/api/siteverify?secret=" . $recaptcha_secret_key . "&response=" . $recaptcha_response . "&remoteip=" . $_SERVER['REMOTE_ADDR']
+            );
+            $captcha_success = json_decode($verify);
+            if (!$captcha_success->success) {
+                $message = "reCAPTCHA verification failed. Please try again.";
                 $toastClass = "danger";
-                log_security_event("ADMIN_RATE_LIMIT_EXCEEDED", "IP: $ip_address");
+                log_security_event("ADMIN_RECAPTCHA_FAILED", "IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
             } else {
-                // Get admin data
-                $stmt = $conn->prepare("SELECT id, username, email, password_hash, role FROM admin_users WHERE username = ?");
-                $stmt->bind_param("s", $username);
-                $stmt->execute();
-                $result = $stmt->get_result();
+                $username = sanitize_input($_POST['username']);
+                $password = $_POST['password'];
+                $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
-                if ($result->num_rows > 0) {
-                    $admin = $result->fetch_assoc();
-                    
-                    // Verify password
-                    if (verify_password($password, $admin['password_hash'])) {
-                        // Successful admin login
-                        session_regenerate_id(true);
-                        
-                        $_SESSION['admin_id'] = $admin['id'];
-                        $_SESSION['admin_username'] = $admin['username'];
-                        $_SESSION['admin_role'] = $admin['role'];
-                        $_SESSION['login_time'] = time();
-                        $_SESSION['ip_address'] = $ip_address;
-                        $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
-                        
-                        // Log successful admin login
-                        log_security_event("ADMIN_LOGIN_SUCCESS", "Admin: $username");
-                        
-                        header('Location: index.php');
-                        exit();
-                    } else {
-                        // Failed admin login
-                        $message = "Invalid username or password";
-                        $toastClass = "danger";
-                        log_security_event("ADMIN_LOGIN_FAILED", "Admin: $username");
-                    }
+                // Validate input
+                if (empty($username) || empty($password)) {
+                    $message = "Please fill in all fields";
+                    $toastClass = "warning";
                 } else {
-                    // Admin not found - don't reveal this information
-                    $message = "Invalid username or password";
-                    $toastClass = "danger";
-                    log_security_event("ADMIN_NOT_FOUND", "Username: $username");
+                    // Check rate limiting for admin login
+                    if (!check_rate_limit($ip_address, 'admin_login', 20, 900)) {
+                        $message = "Too many login attempts. Please try again in 15 minutes.";
+                        $toastClass = "danger";
+                        log_security_event("ADMIN_RATE_LIMIT_EXCEEDED", "IP: $ip_address");
+                    } else {
+                        // Get admin data
+                        $stmt = $conn->prepare("SELECT id, username, email, password_hash, role FROM admin_users WHERE username = ?");
+                        $stmt->bind_param("s", $username);
+                        $stmt->execute();
+                        $result = $stmt->get_result();
+
+                        if ($result->num_rows > 0) {
+                            $admin = $result->fetch_assoc();
+                            
+                            // Verify password
+                            if (verify_password($password, $admin['password_hash'])) {
+                                // Successful admin login
+                                session_regenerate_id(true);
+                                
+                                $_SESSION['admin_id'] = $admin['id'];
+                                $_SESSION['admin_username'] = $admin['username'];
+                                $_SESSION['admin_role'] = $admin['role'];
+                                $_SESSION['login_time'] = time();
+                                $_SESSION['ip_address'] = $ip_address;
+                                $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+                                
+                                // Log successful admin login
+                                log_security_event("ADMIN_LOGIN_SUCCESS", "Admin: $username");
+                                
+                                header('Location: index.php');
+                                exit();
+                            } else {
+                                // Failed admin login
+                                $message = "Invalid username or password";
+                                $toastClass = "danger";
+                                log_security_event("ADMIN_LOGIN_FAILED", "Admin: $username");
+                            }
+                        } else {
+                            // Admin not found - don't reveal this information
+                            $message = "Invalid username or password";
+                            $toastClass = "danger";
+                            log_security_event("ADMIN_NOT_FOUND", "Username: $username");
+                        }
+                        $stmt->close();
+                    }
                 }
-                $stmt->close();
             }
         }
     }
+
     $conn->close();
 }
 
 // Generate CSRF token
 $csrf_token = generate_csrf_token();
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -95,7 +118,7 @@ $csrf_token = generate_csrf_token();
     <title>SecureAuth - Admin Login</title>
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             min-height: 100vh;
         }
         .card {
@@ -104,12 +127,12 @@ $csrf_token = generate_csrf_token();
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
         }
         .card-header {
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             color: white;
             border-radius: 15px 15px 0 0 !important;
         }
-        .btn-danger {
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        .btn-primary {
+            background: linear-gradient(135deg, #009688 0%, #00796B 100%);
             border: none;
             border-radius: 25px;
             padding: 12px 30px;
@@ -121,8 +144,8 @@ $csrf_token = generate_csrf_token();
             padding: 12px 15px;
         }
         .form-control:focus {
-            border-color: #dc3545;
-            box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+            border-color: #009688;
+            box-shadow: 0 0 0 0.2rem rgba(0, 150, 136, 0.25);
         }
         .security-info {
             background: rgba(255, 255, 255, 0.1);
@@ -130,25 +153,12 @@ $csrf_token = generate_csrf_token();
             padding: 15px;
             margin-top: 20px;
         }
-        .admin-warning {
-            background: rgba(220, 53, 69, 0.1);
-            border: 1px solid #dc3545;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
     </style>
 </head>
-
 <body>
     <div class="container mt-5">
         <div class="row justify-content-center">
             <div class="col-md-6">
-                <div class="admin-warning">
-                    <h6><i class="fa fa-exclamation-triangle text-danger"></i> Admin Access Only</h6>
-                    <p class="mb-0 small">This area is restricted to authorized administrators only. Unauthorized access attempts will be logged and reported.</p>
-                </div>
-                
                 <div class="card">
                     <div class="card-header text-center">
                         <h3><i class="fa fa-user-secret"></i> Admin Login</h3>
@@ -157,7 +167,6 @@ $csrf_token = generate_csrf_token();
                     <div class="card-body p-4">
                         <form method="POST" id="adminLoginForm">
                             <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                            
                             <div class="mb-3">
                                 <label for="username" class="form-label">
                                     <i class="fa fa-user"></i> Admin Username
@@ -165,7 +174,6 @@ $csrf_token = generate_csrf_token();
                                 <input type="text" name="username" id="username" class="form-control" 
                                        required autocomplete="username" placeholder="Enter admin username">
                             </div>
-                            
                             <div class="mb-3">
                                 <label for="password" class="form-label">
                                     <i class="fa fa-lock"></i> Admin Password
@@ -178,21 +186,22 @@ $csrf_token = generate_csrf_token();
                                     </button>
                                 </div>
                             </div>
-                            
                             <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="rememberMe">
                                 <label class="form-check-label" for="rememberMe">
                                     Remember me for 30 days
                                 </label>
                             </div>
-                            
+                            <!-- Google reCAPTCHA widget -->
+                            <div class="mb-3">
+                                <div class="g-recaptcha" data-sitekey="<?php echo $recaptcha_site_key; ?>"></div>
+                            </div>
                             <div class="d-grid">
-                                <button type="submit" class="btn btn-danger btn-lg">
+                                <button type="submit" class="btn btn-primary btn-lg">
                                     <i class="fa fa-sign-in"></i> Admin Login
                                 </button>
                             </div>
                         </form>
-                        
                         <div class="text-center mt-4">
                             <p class="mb-0">
                                 <a href="../pages/login.php" class="text-decoration-none">
@@ -200,23 +209,11 @@ $csrf_token = generate_csrf_token();
                                 </a>
                             </p>
                         </div>
-                        
-                        <div class="security-info">
-                            <h6><i class="fa fa-shield"></i> Admin Security Features:</h6>
-                            <ul class="list-unstyled mb-0 small">
-                                <li><i class="fa fa-check text-success"></i> Enhanced Rate Limiting</li>
-                                <li><i class="fa fa-check text-success"></i> IP Address Logging</li>
-                                <li><i class="fa fa-check text-success"></i> Session Security</li>
-                                <li><i class="fa fa-check text-success"></i> Activity Monitoring</li>
-                                <li><i class="fa fa-check text-success"></i> Access Control</li>
-                            </ul>
-                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-
     <!-- Toast Notification -->
     <?php if ($message): ?>
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -231,13 +228,12 @@ $csrf_token = generate_csrf_token();
         </div>
     </div>
     <?php endif; ?>
-
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     <script>
         // Password visibility toggle
         document.getElementById('togglePassword').addEventListener('click', function() {
             const password = document.getElementById('password');
             const icon = this.querySelector('i');
-            
             if (password.type === 'password') {
                 password.type = 'text';
                 icon.classList.remove('fa-eye');
@@ -248,19 +244,16 @@ $csrf_token = generate_csrf_token();
                 icon.classList.add('fa-eye');
             }
         });
-
         // Form validation
         document.getElementById('adminLoginForm').addEventListener('submit', function(e) {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            
             if (!username || !password) {
                 e.preventDefault();
                 alert('Please fill in all fields');
                 return false;
             }
         });
-
         // Auto-hide toast after 5 seconds
         setTimeout(function() {
             const toasts = document.querySelectorAll('.toast');
