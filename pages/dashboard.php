@@ -123,7 +123,7 @@ $csrf_token = generate_csrf_token();
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
             <a class="navbar-brand" href="#">
-                <i class="fa fa-shield"></i> SecureAuth
+                <i class="fa fa-shield"></i> CredGuard
             </a>
             <div class="navbar-nav ms-auto">
                 <span class="navbar-text me-3">

@@ -129,13 +129,13 @@ $csrf_token = generate_csrf_token();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="SecureAuth - Secure User Authentication System">
+    <meta name="description" content="CredGuard - PHP-Based Authentication Module">
     <meta name="robots" content="noindex, nofollow">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
     <link rel="shortcut icon" href="https://cdn-icons-png.flaticon.com/512/295/295128.png">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"></script>
-    <title>SecureAuth - Login</title>
+    <title>CredGuard - Login</title>
     <style>
         body {
             background: linear-gradient(135deg, #009688 0%, #00796B 100%);
@@ -181,8 +181,8 @@ $csrf_token = generate_csrf_token();
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header text-center">
-                        <h3><i class="fa fa-shield"></i> SecureAuth Login</h3>
-                        <p class="mb-0">Secure User Authentication System</p>
+                        <h3><i class="fa fa-shield"></i> CredGuard Login</h3>
+                        <p class="mb-0">PHP-Based Authentication Module</p>
                     </div>
                     <div class="card-body p-4">
                         <form method="POST" id="loginForm">
@@ -240,7 +240,7 @@ $csrf_token = generate_csrf_token();
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
         <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
             <div class="toast-header">
-                <strong class="me-auto">SecureAuth</strong>
+                <strong class="me-auto">CredGuard</strong>
                 <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
             </div>
             <div class="toast-body text-<?php echo $toastClass; ?>">

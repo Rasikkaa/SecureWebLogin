@@ -115,7 +115,7 @@ $csrf_token = generate_csrf_token();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.css">
     <link rel="shortcut icon" href="https://cdn-icons-png.flaticon.com/512/295/295128.png">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"></script>
-    <title>SecureAuth - Admin Login</title>
+    <title>CredGuard - Admin Login</title>
     <style>
         body {
             background: linear-gradient(135deg, #009688 0%, #00796B 100%);
@@ -161,8 +161,8 @@ $csrf_token = generate_csrf_token();
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header text-center">
-                        <h3><i class="fa fa-user-secret"></i> Admin Login</h3>
-                        <p class="mb-0">SecureAuth Administration Panel</p>
+                        <h3><i class="fa fa-shield"></i> CredGuard Admin</h3>
+                        <p class="mb-0">PHP-Based Authentication Module</p>
                     </div>
                     <div class="card-body p-4">
                         <form method="POST" id="adminLoginForm">
