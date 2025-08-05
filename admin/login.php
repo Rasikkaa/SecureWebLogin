@@ -48,7 +48,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $toastClass = "warning";
                 } else {
                     // Check rate limiting for admin login
-                    if (!check_rate_limit($ip_address, 'admin_login', 20, 900)) {
+                    if (!check_rate_limit($ip_address, 'admin_login', 3, 900)) {
                         $message = "Too many login attempts. Please try again in 15 minutes.";
                         $toastClass = "danger";
                         log_security_event("ADMIN_RATE_LIMIT_EXCEEDED", "IP: $ip_address");
